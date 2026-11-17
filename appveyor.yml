@@ -1,0 +1,30 @@
+version: 1.0.{build}
+image: Visual Studio 2022
+
+build_script:
+  - ps: |
+      # Install Tailscale
+      Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" -OutFile "tailscale.msi"
+      Start-Process msiexec.exe -ArgumentList "/i", "tailscale.msi", "/quiet", "/norestart" -Wait
+
+      # Connect Tailscale
+      & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey="$env:TAILSCALE_AUTH_KEY" --hostname="av-win-rdp" --unattended
+
+      # Enable RDP & Create User
+      Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+      Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+      $Password = ConvertTo-SecureString "$env:RDP_PASSWORD" -AsPlainText -Force
+      New-LocalUser -Name "rdpuser" -Password $Password -AccountNeverExpires
+      Add-LocalGroupMember -Group "Administrators" -Member "rdpuser"
+
+      # Show IP & Keep Alive (maksimal 60 menit)
+      $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+      Write-Host "================================"
+      Write-Host "IP Tailscale : $ip"
+      Write-Host "Username     : rdpuser"
+      Write-Host "================================"
+      while ($true) { Start-Sleep -Seconds 300 }
+
+on_finish:
+  - ps: |
+      & "$env:ProgramFiles\Tailscale\tailscale.exe" logout
